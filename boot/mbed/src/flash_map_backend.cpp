@@ -231,6 +231,12 @@ int flash_area_get_sectors(int fa_id, uint32_t* count, struct flash_sector* sect
     return 0;
 }
 
+int flash_area_get_sector(const struct flash_area *fa, off_t off,
+                          struct flash_sector *fs) {
+    uint32_t count = off;
+    return flash_area_get_sectors(fa->fa_id, &count, fs);
+}
+
 int flash_area_id_from_image_slot(int slot) {
     return slot;
 }
