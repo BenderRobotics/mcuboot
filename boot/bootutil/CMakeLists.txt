@@ -35,6 +35,7 @@ target_sources(bootutil
         src/loader.c
         src/swap_misc.c
         src/swap_move.c
+        src/swap_offset.c
         src/swap_scratch.c
         src/tlv.c
 )
