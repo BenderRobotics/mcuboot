@@ -39,6 +39,7 @@
 #include <string.h>
 #include <inttypes.h>
 #include <stddef.h>
+#include <stdlib.h>
 
 #include "sysflash/sysflash.h"
 #include "flash_map_backend/flash_map_backend.h"
@@ -308,7 +309,17 @@ boot_write_magic(const struct flash_area *fap)
     uint8_t magic[BOOT_MAGIC_ALIGN_SIZE];
     uint8_t erased_val;
 
+    uint32_t align = flash_area_align(fap);
+
+    uint8_t* page_buffer = malloc(align);
+    if (page_buffer == NULL) {
+        return BOOT_ENOMEM;
+    }
+    memset(page_buffer, 0xFF, align);
+
     off = boot_magic_off(fap);
+    // offset within a page
+    uint32_t innerOffset = off % align;
 
     /* image_trailer structure was modified with additional padding such that
      * the pad+magic ends up in a flash minimum write region. The address
@@ -317,17 +328,20 @@ boot_write_magic(const struct flash_area *fap)
      * To account for this change, write to magic is first padded with 0xFF
      * before writing to the trailer.
      */
-    pad_off = ALIGN_DOWN(off, BOOT_MAX_ALIGN);
+    pad_off = ALIGN_DOWN(off, align);
 
     erased_val = flash_area_erased_val(fap);
 
     memset(&magic[0], erased_val, sizeof(magic));
     memcpy(&magic[BOOT_MAGIC_ALIGN_SIZE - BOOT_MAGIC_SZ], BOOT_IMG_MAGIC, BOOT_MAGIC_SZ);
+    memcpy(&page_buffer[innerOffset], magic, sizeof(magic));
 
     BOOT_LOG_DBG("boot_write_magic: fa_id=%d off=0x%lx (0x%lx)",
                  flash_area_get_id(fap), (unsigned long)off,
                  (unsigned long)(flash_area_get_off(fap) + off));
-    rc = flash_area_write(fap, pad_off, &magic[0], BOOT_MAGIC_ALIGN_SIZE);
+    rc = flash_area_write(fap, pad_off, page_buffer, align);
+
+    free(page_buffer);
 
     if (rc != 0) {
         return BOOT_EFLASH;
@@ -355,11 +369,6 @@ boot_write_trailer(const struct flash_area *fap, uint32_t off,
 
     align = flash_area_align(fap);
     align = ALIGN_UP(inlen, align);
-    if (align > BOOT_MAX_ALIGN) {
-        /* This should never happen */
-        assert(0);
-        return -1;
-    }
     erased_val = flash_area_erased_val(fap);
 
     memcpy(buf, inbuf, inlen);
@@ -413,12 +422,31 @@ boot_write_swap_info(const struct flash_area *fap, uint8_t swap_type,
 
     BOOT_SET_SWAP_INFO(swap_info, image_num, swap_type);
     off = boot_swap_info_off(fap);
+
+    uint32_t align = flash_area_align(fap);
+
+    uint8_t* page_buffer = malloc(align);
+    if (page_buffer == NULL) {
+        return BOOT_ENOMEM;
+    }
+    memset(page_buffer, 0xFF, align);
+
+    uint32_t aligned = ALIGN_DOWN(off, align);
+    // offset within a page
+    uint32_t innerOffset = off % align;
+    memcpy(&page_buffer[innerOffset], &swap_info, sizeof(swap_info));
+
+
     BOOT_LOG_DBG("writing swap_info; fa_id=%d off=0x%lx (0x%lx), swap_type=0x%x"
                  " image_num=0x%x",
                  flash_area_get_id(fap), (unsigned long)off,
-                 (unsigned long)(flash_area_get_off(fap) + off),
+                 (unsigned long)(flash_area_get_off(fap) + aligned),
                  swap_type, image_num);
-    return boot_write_trailer(fap, off, (const uint8_t *) &swap_info, 1);
+    int status = boot_write_trailer(fap, aligned, page_buffer, align);
+
+    free(page_buffer);
+
+    return status;
 }
 
 int
