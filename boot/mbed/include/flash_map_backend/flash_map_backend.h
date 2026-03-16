@@ -163,15 +163,13 @@ uint8_t flash_area_erased_val(const struct flash_area * fap);
 int flash_area_get_sectors(int fa_id, uint32_t *count,
   struct flash_sector *sectors);
 
-/* Retrieve the flash sector withing given flash area, at a given offset.
+/* Retrieve the flash sector within given flash area, at a given offset.
  *
  * @param fa        flash area where the sector is taken from.
  * @param off       offset within flash area.
  * @param sector    structure of sector information.
- * Returns 0 on success, -ERANGE if @p off is beyond flash area size,
+ * Returns 0 on success, BOOT_EFLASH if @p off is beyond flash area size,
  *         other negative errno code on failure.
- * 
- * BR: an alias for compatibility with newer mcuboot API
  */
 int flash_area_get_sector(const struct flash_area *fa, off_t off,
                           struct flash_sector *fs);

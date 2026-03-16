@@ -233,8 +233,24 @@ int flash_area_get_sectors(int fa_id, uint32_t* count, struct flash_sector* sect
 
 int flash_area_get_sector(const struct flash_area *fa, off_t off,
                           struct flash_sector *fs) {
-    uint32_t count = off;
-    return flash_area_get_sectors(fa->fa_id, &count, fs);
+    struct flash_sector sectors[MCUBOOT_MAX_IMG_SECTORS];
+    uint32_t count;
+    int rc;
+
+    if (off < 0 || (size_t) off >= fa->fa_size) {
+        return BOOT_EFLASH;
+    }
+
+    rc = flash_area_get_sectors(fa->fa_id, &count, sectors);
+
+    for (uint32_t i = 0; i < count; i++) {
+        if (off >= (off_t)sectors[i].fs_off && off < (off_t)(sectors[i].fs_off + sectors[i].fs_size)) {
+            *fs = sectors[i];
+            return 0;
+        }
+    }
+
+    return rc;
 }
 
 int flash_area_id_from_image_slot(int slot) {
