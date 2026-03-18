@@ -416,7 +416,6 @@ boot_write_status(const struct boot_loader_state *state, struct boot_status *bs)
     const struct flash_area *fap;
     uint32_t off;
     int rc = 0;
-    uint8_t buf[BOOT_MAX_ALIGN];
     uint32_t align;
     uint8_t erased_val;
 
@@ -442,14 +441,31 @@ boot_write_status(const struct boot_loader_state *state, struct boot_status *bs)
           boot_status_internal_off(bs, BOOT_WRITE_SZ(state));
     align = flash_area_align(fap);
     erased_val = flash_area_erased_val(fap);
-    memset(buf, erased_val, BOOT_MAX_ALIGN);
-    buf[0] = bs->state;
+
+    /* 
+     * the dynamically allocated buffer replaced a static buffer of size BOOT_MAX_ALIGN (size 8),
+     * but the buffer must have size 1024 to hold an entire write page the BOOT_MAX_ALIGN can be
+     * overwritten with macro MCUBOOT_BOOT_MAX_ALIGN from configuration "mcuboot.flash-block-size",
+     * but that is limited only to sizes 8 to 32 bytes
+     */
+    uint8_t* page_buffer = malloc(align);
+    if (page_buffer == NULL) {
+        return BOOT_ENOMEM;
+    }
+    memset(page_buffer, erased_val, align);
+
+    uint32_t aligned_offset = ALIGN_DOWN(off, align);
+    // offset within a page
+    uint32_t innerOffset = off % align;
+    memcpy(&page_buffer[innerOffset], &bs->state, sizeof(bs->state));
 
     BOOT_LOG_DBG("writing swap status; fa_id=%d off=0x%lx (0x%lx)",
-                 flash_area_get_id(fap), (unsigned long)off,
-                 (unsigned long)flash_area_get_off(fap) + off);
+                 flash_area_get_id(fap), (unsigned long)aligned_offset,
+                 (unsigned long)flash_area_get_off(fap) + aligned_offset);
 
-    rc = flash_area_write(fap, off, buf, align);
+    rc = flash_area_write(fap, aligned_offset, page_buffer, align);
+    free(page_buffer);
+
     if (rc != 0) {
         rc = BOOT_EFLASH;
     }

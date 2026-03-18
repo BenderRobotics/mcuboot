@@ -309,13 +309,20 @@ boot_write_magic(const struct flash_area *fap)
     uint8_t magic[BOOT_MAGIC_ALIGN_SIZE];
     uint8_t erased_val;
 
+    erased_val = flash_area_erased_val(fap);
     uint32_t align = flash_area_align(fap);
 
+    /* 
+     * the dynamically allocated buffer replaced a static buffer of size BOOT_MAX_ALIGN (size 8),
+     * but the buffer must have size 1024 to hold an entire write page the BOOT_MAX_ALIGN can be
+     * overwritten with macro MCUBOOT_BOOT_MAX_ALIGN from configuration "mcuboot.flash-block-size",
+     * but that is limited only to sizes 8 to 32 bytes
+     */
     uint8_t* page_buffer = malloc(align);
     if (page_buffer == NULL) {
         return BOOT_ENOMEM;
     }
-    memset(page_buffer, 0xFF, align);
+    memset(page_buffer, erased_val, align);
 
     off = boot_magic_off(fap);
     // offset within a page
@@ -330,8 +337,6 @@ boot_write_magic(const struct flash_area *fap)
      */
     pad_off = ALIGN_DOWN(off, align);
 
-    erased_val = flash_area_erased_val(fap);
-
     memset(&magic[0], erased_val, sizeof(magic));
     memcpy(&magic[BOOT_MAGIC_ALIGN_SIZE - BOOT_MAGIC_SZ], BOOT_IMG_MAGIC, BOOT_MAGIC_SZ);
     memcpy(&page_buffer[innerOffset], magic, sizeof(magic));
@@ -340,7 +345,6 @@ boot_write_magic(const struct flash_area *fap)
                  flash_area_get_id(fap), (unsigned long)off,
                  (unsigned long)(flash_area_get_off(fap) + off));
     rc = flash_area_write(fap, pad_off, page_buffer, align);
-
     free(page_buffer);
 
     if (rc != 0) {
@@ -359,7 +363,6 @@ int
 boot_write_trailer(const struct flash_area *fap, uint32_t off,
         const uint8_t *inbuf, uint8_t inlen)
 {
-    uint8_t buf[BOOT_MAX_ALIGN];
     uint8_t erased_val;
     uint32_t align;
     int rc;
@@ -370,11 +373,27 @@ boot_write_trailer(const struct flash_area *fap, uint32_t off,
     align = flash_area_align(fap);
     align = ALIGN_UP(inlen, align);
     erased_val = flash_area_erased_val(fap);
+    
+    /* 
+     * the dynamically allocated buffer replaced a static buffer of size BOOT_MAX_ALIGN (size 8),
+     * but the buffer must have size 1024 to hold an entire write page the BOOT_MAX_ALIGN can be
+     * overwritten with macro MCUBOOT_BOOT_MAX_ALIGN from configuration "mcuboot.flash-block-size",
+     * but that is limited only to sizes 8 to 32 bytes
+     */
+    uint8_t* page_buffer = malloc(align);
+    if (page_buffer == NULL) {
+        return BOOT_ENOMEM;
+    }
+    memset(page_buffer, erased_val, align);
 
-    memcpy(buf, inbuf, inlen);
-    memset(&buf[inlen], erased_val, align - inlen);
+    uint32_t aligned_offset = ALIGN_DOWN(off, align);
+    // offset within a page
+    uint32_t innerOffset = off % align;
+    memcpy(&page_buffer[innerOffset], &inbuf, inlen);
 
-    rc = flash_area_write(fap, off, buf, align);
+    rc = flash_area_write(fap, aligned_offset, page_buffer, align);
+    free(page_buffer);
+
     if (rc != 0) {
         return BOOT_EFLASH;
     }
@@ -419,31 +438,38 @@ boot_write_swap_info(const struct flash_area *fap, uint8_t swap_type,
 {
     uint32_t off;
     uint8_t swap_info;
+    uint8_t erased_val;
 
     BOOT_SET_SWAP_INFO(swap_info, image_num, swap_type);
     off = boot_swap_info_off(fap);
 
+    erased_val = flash_area_erased_val(fap);
     uint32_t align = flash_area_align(fap);
 
+    /* 
+     * the dynamically allocated buffer replaced a static buffer of size BOOT_MAX_ALIGN (size 8),
+     * but the buffer must have size 1024 to hold an entire write page the BOOT_MAX_ALIGN can be
+     * overwritten with macro MCUBOOT_BOOT_MAX_ALIGN from configuration "mcuboot.flash-block-size",
+     * but that is limited only to sizes 8 to 32 bytes
+     */
     uint8_t* page_buffer = malloc(align);
     if (page_buffer == NULL) {
         return BOOT_ENOMEM;
     }
-    memset(page_buffer, 0xFF, align);
+    memset(page_buffer, erased_val, align);
 
     uint32_t aligned = ALIGN_DOWN(off, align);
     // offset within a page
     uint32_t innerOffset = off % align;
     memcpy(&page_buffer[innerOffset], &swap_info, sizeof(swap_info));
 
-
     BOOT_LOG_DBG("writing swap_info; fa_id=%d off=0x%lx (0x%lx), swap_type=0x%x"
                  " image_num=0x%x",
                  flash_area_get_id(fap), (unsigned long)off,
                  (unsigned long)(flash_area_get_off(fap) + aligned),
                  swap_type, image_num);
-    int status = boot_write_trailer(fap, aligned, page_buffer, align);
 
+    int status = boot_write_trailer(fap, aligned, page_buffer, align);
     free(page_buffer);
 
     return status;
