@@ -219,6 +219,11 @@ int flash_area_get_sectors(int fa_id, uint32_t* count, struct flash_sector* sect
 
         bd_size_t erase_size = bd->get_erase_size(offset);
 
+        /* if the block device is not initialized, the method returns 0, which causes an infinite loop */
+        if (erase_size == 0) {
+            return BOOT_EBADSTATUS;
+        }
+
         if (*count < MCUBOOT_MAX_IMG_SECTORS) {
             sectors[*count].fs_off = offset;
             sectors[*count].fs_size = erase_size;
@@ -242,6 +247,9 @@ int flash_area_get_sector(const struct flash_area *fa, off_t off,
     }
 
     rc = flash_area_get_sectors(fa->fa_id, &count, sectors);
+    if (rc) {
+        return -1;
+    }
 
     for (uint32_t i = 0; i < count; i++) {
         if (off >= (off_t)sectors[i].fs_off && off < (off_t)(sectors[i].fs_off + sectors[i].fs_size)) {
@@ -250,7 +258,7 @@ int flash_area_get_sector(const struct flash_area *fa, off_t off,
         }
     }
 
-    return rc;
+    return -1;
 }
 
 int flash_area_id_from_image_slot(int slot) {
